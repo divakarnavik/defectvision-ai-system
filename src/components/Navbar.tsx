@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Scan, Menu, X, Brain } from 'lucide-react';
+import logo from '../assets/logo.png';
+import { Menu, X, Brain } from 'lucide-react';
 import { cn } from '../utils/cn';
 
 interface NavbarProps {
@@ -26,8 +27,8 @@ const Navbar: React.FC<NavbarProps> = ({ activeSection, onNavigate }) => {
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => onNavigate('hero')}>
             <div className="relative">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center">
-                <Scan className="w-5 h-5 text-white" />
+              <div className="flex items-center justify-center">
+                <img src={logo} alt="Logo" className="h-10 w-auto object-contain" />
               </div>
             </div>
             <span className="text-xl font-bold bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Scan, ArrowDown, Cpu, Eye, Zap } from 'lucide-react';
+import { Scan, ArrowDown, Cpu, Eye, Zap, Brain } from 'lucide-react';
 
 interface HeroSectionProps {
   onNavigate: (section: string) => void;
@@ -57,7 +57,7 @@ const HeroSection: React.FC<HeroSectionProps> = ({ onNavigate }) => {
             className="px-8 py-4 bg-white border border-gray-200 rounded-xl text-gray-700 font-semibold text-lg hover:bg-gray-50 hover:border-amber-300 transition-all duration-300 shadow-sm"
           >
             <span className="flex items-center justify-center gap-2">
-              <Cpu className="w-5 h-5" />
+              <Brain className="w-5 h-5" />
               Train Model
             </span>
           </button>

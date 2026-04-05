@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Scan } from 'lucide-react';
+import logo from '../assets/logo.png';
 
 interface SplashScreenProps {
   onComplete: () => void;
@@ -48,10 +48,9 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onComplete }) => {
           phase === 'enter' ? 'scale-0 rotate-180 opacity-0' : 'scale-100 rotate-0 opacity-100'
         }`}>
           <div className="relative">
-            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-xl shadow-amber-500/20">
-              <Scan className="w-10 h-10 text-white" />
+            <div className="flex items-center justify-center">
+              <img src={logo} alt="DefectVision AI" className="w-32 h-32 object-contain" />
             </div>
-            <div className="absolute -inset-1 rounded-2xl bg-gradient-to-br from-amber-500/20 to-orange-600/20 blur-xl -z-10" />
           </div>
         </div>
 
