@@ -2,12 +2,14 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Upload, Play, RotateCcw, CheckCircle, XCircle, ImageIcon,
   Crosshair, Camera, Video, Square, Pause, Circle, AlertTriangle,
-  Activity, Clock, Layers, Info, CircuitBoard, Wifi, WifiOff, Zap
+  Activity, Clock, Layers, Info, CircuitBoard, Wifi, WifiOff, Zap, Sparkles, Cpu
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { defectClasses } from '../data/defectClasses';
 import { DefectType, ShapeInfo } from '../types';
 import { useAppContext } from '../context/AppContext';
+import { analyzeImageWithAI, isAIEnabled } from '../utils/aiService';
+import AISettingsPanel from './AISettingsPanel';
 
 type InputMode = 'image' | 'video' | 'webcam' | 'esp32';
 
@@ -405,6 +407,9 @@ const DemoSection: React.FC = () => {
   const fpsTs = useRef<number[]>([]);
   const [detectionLog, setDetectionLog] = useState<LogEntry[]>([]);
   const logRef = useRef<LogEntry[]>([]);
+  const [aiEnabled, setAiEnabled] = useState(isAIEnabled());
+  const [analysisMethod, setAnalysisMethod] = useState<'ai' | 'pixel' | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   // ESP32-CAM state
   const [esp32Ip, setEsp32Ip] = useState('');
@@ -502,6 +507,7 @@ const DemoSection: React.FC = () => {
   const handleAnalyze = useCallback(async () => {
     if (!uploadedImage) return;
     setIsAnalyzing(true); setAnalysisComplete(false); setScanLine(0);
+    setAnalysisMethod(null); setAiError(null);
     logRef.current = []; setDetectionLog([]);
 
     let progress = 0;
@@ -511,40 +517,64 @@ const DemoSection: React.FC = () => {
     // First try trained model match
     const trainedResult = await tryTrainedMatch(uploadedImage);
 
-    setTimeout(() => {
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
-      const canvas = canvasRef.current;
-      const img = imageRef.current;
-      if (!canvas || !img) { setIsAnalyzing(false); return; }
-      const ctx = canvas.getContext('2d');
-      if (!ctx) { setIsAnalyzing(false); return; }
+    // Try AI analysis if enabled and no trained match
+    let aiDefects: DetectedDefect[] | null = null;
+    if (!trainedResult && aiEnabled && isAIEnabled()) {
+      try {
+        const aiResult = await analyzeImageWithAI(uploadedImage);
+        if (aiResult.success && aiResult.defects.length >= 0) {
+          aiDefects = aiResult.defects.map((d, i) => ({
+            id: i,
+            type: d.type,
+            confidence: d.confidence,
+            x: d.x, y: d.y, w: d.w, h: d.h,
+          }));
+          setAnalysisMethod('ai');
+        } else if (!aiResult.success) {
+          setAiError(aiResult.error || 'AI analysis failed');
+        }
+      } catch {
+        setAiError('AI analysis encountered an error');
+      }
+    }
 
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
+    // Small delay for scan animation
+    await new Promise(resolve => setTimeout(resolve, aiDefects !== null ? 500 : 2000));
+
+    if (animationRef.current) cancelAnimationFrame(animationRef.current);
+    const canvas = canvasRef.current;
+    const img = imageRef.current;
+    if (!canvas || !img) { setIsAnalyzing(false); return; }
+    const ctx = canvas.getContext('2d');
+    if (!ctx) { setIsAnalyzing(false); return; }
+
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+    let defects: DetectedDefect[];
+    if (trainedResult && trainedResult.length > 0) {
+      defects = trainedResult;
+      setAnalysisMethod('pixel');
+    } else if (aiDefects !== null) {
+      defects = aiDefects;
+      setAnalysisMethod('ai');
+    } else {
+      defects = analyzePixels(ctx, canvas.width, canvas.height);
+      setAnalysisMethod('pixel');
+    }
+
+    setDetectedDefects(defects);
+    if (defects.length > 0) {
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-      let defects: DetectedDefect[];
-      if (trainedResult && trainedResult.length > 0) {
-        // Use trained model results
-        defects = trainedResult;
-      } else {
-        // Fall back to pixel analysis
-        defects = analyzePixels(ctx, canvas.width, canvas.height);
-      }
-
-      setDetectedDefects(defects);
-      if (defects.length > 0) {
-        // Redraw image then overlay boxes
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        drawBoxes(ctx, defects, canvas.width, canvas.height);
-        addLogs(defects);
-      }
-      saveHistory(defects, 'image', canvas);
-      setIsAnalyzing(false);
-      setAnalysisComplete(true);
-      setScanLine(100);
-    }, 2000);
-  }, [uploadedImage, addLogs, saveHistory, tryTrainedMatch]);
+      drawBoxes(ctx, defects, canvas.width, canvas.height);
+      addLogs(defects);
+    }
+    saveHistory(defects, 'image', canvas);
+    setIsAnalyzing(false);
+    setAnalysisComplete(true);
+    setScanLine(100);
+  }, [uploadedImage, addLogs, saveHistory, tryTrainedMatch, aiEnabled]);
 
   const handleFile = useCallback((file: File) => {
     if (file && file.type.startsWith('image/')) {
@@ -570,7 +600,7 @@ const DemoSection: React.FC = () => {
   }, []);
 
   const handleDrop = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragActive(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }, [handleFile]);
-  const handleImageReset = () => { setUploadedImage(null); setAnalysisComplete(false); setDetectedDefects([]); setIsAnalyzing(false); setScanLine(0); logRef.current = []; setDetectionLog([]); if (animationRef.current) cancelAnimationFrame(animationRef.current); };
+  const handleImageReset = () => { setUploadedImage(null); setAnalysisComplete(false); setDetectedDefects([]); setIsAnalyzing(false); setScanLine(0); setAnalysisMethod(null); setAiError(null); logRef.current = []; setDetectionLog([]); if (animationRef.current) cancelAnimationFrame(animationRef.current); };
 
   const loadSample = useCallback(() => {
     const c = document.createElement('canvas'); c.width = 480; c.height = 480;
@@ -802,6 +832,8 @@ const DemoSection: React.FC = () => {
           </div>
         </div>
 
+        <AISettingsPanel onStatusChange={(enabled) => setAiEnabled(enabled)} />
+
         <div className="flex justify-center mb-8">
           <div className="inline-flex flex-wrap justify-center bg-white border border-gray-200 rounded-xl p-1 gap-1">
             {([
@@ -836,6 +868,20 @@ const DemoSection: React.FC = () => {
                     <div className="absolute top-3 left-3 z-30">
                       {isAnalyzing && (<div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-yellow-500/20 border border-yellow-500/30 backdrop-blur-sm"><div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" /><span className="text-yellow-400 text-xs font-bold">ANALYZING...</span></div>)}
                       {analysisComplete && (<div className={cn('flex items-center gap-2 px-3 py-1.5 rounded-full border backdrop-blur-sm', hasDefects ? 'bg-red-500/20 border-red-500/30' : 'bg-green-500/20 border-green-500/30')}>{hasDefects ? <XCircle className="w-4 h-4 text-red-400" /> : <CheckCircle className="w-4 h-4 text-green-400" />}<span className={cn('text-xs font-bold', hasDefects ? 'text-red-400' : 'text-green-400')}>{hasDefects ? currentDefects.length + ' DEFECT' + (currentDefects.length > 1 ? 'S' : '') + ' DETECTED' : 'PASS - NO DEFECTS'}</span></div>)}
+                      {analysisComplete && analysisMethod && (
+                        <div className={cn('flex items-center gap-1.5 px-2.5 py-1 rounded-full border backdrop-blur-sm mt-2', analysisMethod === 'ai' ? 'bg-violet-500/20 border-violet-500/30' : 'bg-blue-500/20 border-blue-500/30')}>
+                          {analysisMethod === 'ai' ? <Sparkles className="w-3 h-3 text-violet-400" /> : <Cpu className="w-3 h-3 text-blue-400" />}
+                          <span className={cn('text-[10px] font-bold', analysisMethod === 'ai' ? 'text-violet-400' : 'text-blue-400')}>
+                            {analysisMethod === 'ai' ? 'GEMINI AI' : 'PIXEL ANALYSIS'}
+                          </span>
+                        </div>
+                      )}
+                      {aiError && (
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-yellow-500/20 border border-yellow-500/30 backdrop-blur-sm mt-2">
+                          <AlertTriangle className="w-3 h-3 text-yellow-400" />
+                          <span className="text-[10px] font-bold text-yellow-400">AI fallback: {aiError}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
